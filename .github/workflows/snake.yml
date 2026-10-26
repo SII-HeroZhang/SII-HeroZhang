@@ -1,0 +1,64 @@
+name: Generate contribution snake
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/snake.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contribution-snake
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out profile repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Generate light and dark snake animations
+        uses: Platane/snk/svg-only@d8f6715049803e982ee5ff501b6b9b7d5deeb09b # v3
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          outputs: |
+            dist/github-snake.svg
+            dist/github-snake-dark.svg?palette=github-dark
+
+      - name: Publish animations to output branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/github-snake.svg
+          test -s dist/github-snake-dark.svg
+          mv dist "${RUNNER_TEMP}/snake-output"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          if git ls-remote --exit-code --heads origin output; then
+            git fetch --no-tags origin output
+            git switch --force-create output FETCH_HEAD
+          else
+            git switch --orphan output
+          fi
+
+          cp "${RUNNER_TEMP}/snake-output/github-snake.svg" github-snake.svg
+          cp "${RUNNER_TEMP}/snake-output/github-snake-dark.svg" github-snake-dark.svg
+          git add -- github-snake.svg github-snake-dark.svg
+
+          if git diff --cached --quiet; then
+            echo 'Snake animations are already up to date.'
+          else
+            git commit -m 'Update contribution snake animations'
+            git push origin HEAD:output
+          fi
